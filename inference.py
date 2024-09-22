@@ -11,12 +11,14 @@ import torch
 from cog import BasePredictor, Input, Path
 from PIL import Image
 import cv2
+
 from utils import convert_state_dict
 from models import restormer_arch
 from data.preprocess.crop_merge_image import stride_integral
 
 os.sys.path.append('./data/MBD/')
 from data.MBD.infer import net1_net2_infer_single_im
+
 
 class Predictor(BasePredictor):
     def setup(self):
