@@ -19,26 +19,39 @@ from data.preprocess.crop_merge_image import stride_integral
 os.sys.path.append('./data/MBD/')
 from data.MBD.infer import net1_net2_infer_single_im
 
+DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 class Predictor(BasePredictor):
     def setup(self):
-        """Load the model into memory to make running multiple predictions efficient"""
         self.model = model_init(get_args())
+        self.model.to(DEVICE)
+        print(f"Using device: {DEVICE}")
 
     def predict(self,
                 image: Path = Input(description="Input image for document restoration"),
-                task: str = Input(description="Task to perform",
-                                  choices=["dewarping", "deshadowing", "appearance", "deblurring", "binarization",
-                                           "end2end"], default="dewarping")
+                task: str = Input(description="Task to perform", choices=["dewarping", "deshadowing", "appearance", "deblurring", "binarization", "end2end"], default="dewarping"),
+                save_dtsprompt: bool = Input(description="Save intermediate prompts", default=False)
                 ) -> Path:
         """Run a single prediction on the model"""
-        img = cv2.imread(str(image))
-        prompt1, prompt2, prompt3, restored = inference_one_im(self.model, str(image), task)
+        img_source = str(image)
+        prompt1, prompt2, prompt3, restored = inference_one_im(self.model, img_source, task)
 
-        output_path = Path(f"/tmp/output_{task}.png")
-        cv2.imwrite(str(output_path), restored)
+        out_folder = "/tmp"
+        output_path = os.path.join(out_folder, f"output_{task}.png")
+        cv2.imwrite(output_path, restored)
 
-        return output_path
+        if save_dtsprompt:
+            cv2.imwrite(os.path.join(out_folder, f"prompt1_{task}.png"), prompt1)
+            cv2.imwrite(os.path.join(out_folder, f"prompt2_{task}.png"), prompt2)
+            cv2.imwrite(os.path.join(out_folder, f"prompt3_{task}.png"), prompt3)
+
+        return Path(output_path)
+    def post_process(self, output, task):
+        # Implement any task-specific post-processing here
+        # This is a placeholder and should be replaced with your actual post-processing logic
+        prompt1 = prompt2 = prompt3 = None
+        restored = (output * 255).astype('uint8')
+        return prompt1, prompt2, prompt3, restored
 
 def dewarp_prompt(img):
     mask = net1_net2_infer_single_im(img,'data/MBD/checkpoint/mbd.pkl')
@@ -279,20 +292,16 @@ def binarization(model,im_path):
     return prompt[:,:,0],prompt[:,:,1],prompt[:,:,2],out_im
 
 def get_args():
-    parser = argparse.ArgumentParser(description='Params')
-    parser.add_argument('--model_path', nargs='?', type=str, default='./checkpoints/docres.pkl',help='Path of the saved checkpoint')
-    parser.add_argument('--im_path', nargs='?', type=str, default='./distorted/',
-                        help='Path of input document image')
-    parser.add_argument('--out_folder', nargs='?', type=str, default='./restorted/',
-                        help='Folder of the output images')
-    parser.add_argument('--task', nargs='?', type=str, default='dewarping', 
-                        help='task that need to be executed')
-    parser.add_argument('--save_dtsprompt', nargs='?', type=int, default=0, 
-                        help='Width of the input image')
-    args = parser.parse_args()
-    possible_tasks = ['dewarping','deshadowing','appearance','deblurring','binarization','end2end']
-    assert args.task in possible_tasks, 'Unsupported task, task must be one of '+', '.join(possible_tasks)
-    return args
+    # Bu fonksiyonu Cog ile kullanırken argparse'ı kullanmayacağız
+    # Ancak model_init fonksiyonu için gerekli olduğundan, varsayılan değerlerle bir obje döndüreceğiz
+    class Args:
+        def __init__(self):
+            self.model_path = './checkpoints/docres.pkl'
+            self.im_path = './distorted/'
+            self.out_folder = './restorted/'
+            self.task = 'dewarping'
+            self.save_dtsprompt = 0
+    return Args()
 
 def model_init(args):
    # prepare model
